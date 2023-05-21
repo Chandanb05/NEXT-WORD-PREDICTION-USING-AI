@@ -1,0 +1,137 @@
+import re
+import random
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from collections import defaultdict
+from sklearn.metrics import precision_score, accuracy_score, recall_score, f1_score
+
+class NaiveBayesNextWordPredictor:
+    # ... (code for NaiveBayesNextWordPredictor class remains the same)
+    def _init_(self):
+        self.prior_probabilities = defaultdict(int)
+        self.conditional_probabilities = defaultdict(lambda: defaultdict(int))
+        self.vocabulary = set()
+
+    def train(self, corpus):
+        # Process the training corpus
+        for sentence in corpus:
+            tokens = self.tokenize(sentence)
+            for i in range(len(tokens) - 1):
+                word = tokens[i]
+                next_word = tokens[i + 1]
+                self.prior_probabilities[word] += 1
+                self.conditional_probabilities[word][next_word] += 1
+                self.vocabulary.add(word)
+
+        # Calculate probabilities
+        total_words = sum(self.prior_probabilities.values())
+        for word in self.prior_probabilities:
+            self.prior_probabilities[word] /= total_words
+
+        for word in self.conditional_probabilities:
+            word_count = sum(self.conditional_probabilities[word].values())
+            for next_word in self.conditional_probabilities[word]:
+                self.conditional_probabilities[word][next_word] /= word_count
+
+    def predict(self, prefix):
+        prefix_tokens = self.tokenize(prefix)
+        if len(prefix_tokens) > 0:
+            current_word = prefix_tokens[-1]
+            if current_word in self.conditional_probabilities:
+                next_word_probs = self.conditional_probabilities[current_word]
+                return max(next_word_probs, key=next_word_probs.get)
+        return ""
+
+    def tokenize(self, text):
+        text = re.sub(r"[^\w\s]", "", text.lower())
+        return text.split()
+
+# Example usage
+dataset_file = "imdb_movies.csv"  # Replace with the path to your Kaggle dataset file
+text_column = "overview"  # Replace with the column name containing the text data
+
+# Load the Kaggle dataset into a DataFrame
+data = pd.read_csv(dataset_file)
+
+# Extract the text column from the DataFrame
+corpus = data[text_column].tolist()
+corpus = corpus[:200]
+
+# Define the train-test split ratios
+split_ratios = [(0.6, 0.4), (0.7, 0.3), (0.8, 0.2), (0.9, 0.1)]
+
+# Initialize dictionaries to store evaluation scores for each ratio
+precision_scores = {}
+accuracy_scores = {}
+recall_scores = {}
+f1_scores = {}
+
+for train_ratio, test_ratio in split_ratios:
+    random.shuffle(corpus)  # Shuffle the corpus randomly
+
+    train_size = int(train_ratio * len(corpus))
+    train_corpus = corpus[:train_size]
+    test_corpus = corpus[train_size:]
+
+    predictor = NaiveBayesNextWordPredictor()
+    predictor.train(train_corpus)
+
+    print(f"Train ratio: {train_ratio}, Test ratio: {test_ratio}")
+
+    # Perform predictions on the test corpus
+    true_labels = []
+    predicted_labels = []
+    for sentence in test_corpus:
+        tokens = predictor.tokenize(sentence)
+        for i in range(len(tokens) - 1):
+            prefix = " ".join(tokens[:i+1])
+            next_word = tokens[i+1]
+            predicted_next_word = predictor.predict(prefix)
+            true_labels.append(next_word)
+            predicted_labels.append(predicted_next_word)
+
+    # Calculate evaluation metrics
+    precision = precision_score(true_labels, predicted_labels, average='micro')
+    accuracy = accuracy_score(true_labels, predicted_labels)
+    recall = recall_score(true_labels, predicted_labels, average='micro')
+    f1 = f1_score(true_labels, predicted_labels, average='micro')
+
+    # Store scores in dictionaries
+    precision_scores[train_ratio] = precision
+    accuracy_scores[train_ratio] = accuracy
+    recall_scores[train_ratio] = recall
+    f1_scores[train_ratio] = f1
+
+    print("Evaluation Metrics:")
+    print(f"Precision: {precision:.9f}")
+    print(f"Accuracy: {accuracy:.9f}")
+    print(f"Recall: {recall:.9f}")
+    print(f"F1-Score: {f1:.9f}")
+    print("-------------------")
+
+# plot bar graph
+
+ratios = list(precision_scores.keys())
+metrics = ['Precision', 'Accuracy', 'Recall', 'F1-Score']
+scores = [precision_scores, accuracy_scores, recall_scores, f1_scores]
+
+x = np.arange(len(ratios))  # X-axis values
+
+fig, ax = plt.subplots()
+bar_width = 0.15
+opacity = 0.8
+
+# Plotting the bars for each metric
+for i, metric in enumerate(metrics):
+    ax.bar(x + i * bar_width, [scores[i][ratio] for ratio in ratios], bar_width, alpha=opacity, label=metric)
+
+ax.set_ylabel('Score')
+ax.set_xlabel('Train-Test Ratio')
+ax.set_title('Evaluation Metrics by Train-Test Ratio')
+ax.set_xticks(x)
+ax.set_xticklabels([f"{int(train_ratio*100)}-{int(test_ratio*100)}" for train_ratio, test_ratio in split_ratios])
+ax.legend()
+
+plt.tight_layout()
+plt.show()
